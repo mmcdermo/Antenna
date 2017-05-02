@@ -1,29 +1,10 @@
-# MIT License
-
-# Copyright (c) 2016 Morgan McDermott & John Carlyle
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
+# Copyright 2016 Morgan McDermott & Blake Allen
 
 import unittest
 import json
 import os.path
-import SignalAntenna.Sources
+from Antenna.Sources import StaticFileSource, RSSFeedSource
+from Antenna.AWSManager import AWSManager
 
 class TestSources(unittest.TestCase):
     def setUp(self):
@@ -32,5 +13,21 @@ class TestSources(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def test_source(self):
-        pass
+    def test_invalid_config(self):
+        config = {}
+        manager = AWSManager()
+        try:
+            source = StaticFileSource(manager, config)
+            self.assertEqual(False, "Source should have thrown exception given empty config")
+        except Exception as e:
+            pass
+
+    def test_defaults(self):
+        config = {
+            'source_url': 'https://www.gutenberg.org/files/54386/54386-0.txt',
+            's3_bucket_name': 'antennatest42',
+            'destination_key': 'gutenberg.txt',
+        }
+        manager = AWSManager()
+        source = StaticFileSource(manager, config)
+        self.assertEqual(source._defaults['item_type'], source.item_type)

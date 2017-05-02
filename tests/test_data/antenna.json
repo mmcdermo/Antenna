@@ -1,0 +1,33 @@
+{
+    "antenna_name": "testAntenna42",
+    "sources": [
+        {
+            "type": "RSSFeedSource",
+            "rss_feed_url": "https://qz.com/feed/",
+        }
+    ],
+    "source_storage": [{
+	"type": "DynamoDBStorage",
+	"dynamodb_table_name": "testAntenna_article_ref_storage"
+	"primary_key": "url",
+	"primary_key_format_string": "{url}"
+    }],
+    "source_filters": [{
+	"type": "UniqueDynamoDBFilter",
+	"dynamodb_table_name": "testAntenna_article_ref_storage",
+	"primary_key": "url",
+	"primary_key_format_string": "{url}"
+    }],
+    "transformers": [
+        {
+            "type": "transformers.CustomTestTransformer",
+            "dynamodb_table_name": "testAntenna_scraped_article"
+	    "storage": [{
+		"type": "DynamoDBStorage",
+		"dynamodb_table_name": "testAntenna_article_ref_storage"
+		"primary_key": "url",
+		"primary_key_format_string": "{url}"
+	    }]
+        }
+    ]
+}

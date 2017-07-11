@@ -3,8 +3,8 @@
 import unittest
 import json
 import os.path
-from Antenna.Sources import StaticFileSource, RSSFeedSource
-from Antenna.AWSManager import AWSManager
+from antenna.Sources import StaticFileSource, RSSFeedSource
+from antenna.AWSManager import AWSManager
 
 class TestSources(unittest.TestCase):
     def setUp(self):
@@ -45,6 +45,8 @@ class TestSources(unittest.TestCase):
         self.assertTrue(len(items) > 3)
         for item in items:
             self.assertTrue(len(item.payload['url']) > 10)
+            self.assertTrue(len(item.payload['content']) > 10)
+            self.assertTrue(len(item.payload['source_url']) > 4)
             self.assertTrue(len(item.payload['title']) > 10)
 
         # TODO - need to implement state saving mechanism for this to be accurate

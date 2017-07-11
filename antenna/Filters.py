@@ -8,6 +8,8 @@ immediately after item production.
 from antenna.Transformers import Transformer
 import redleader.resources as r
 from antenna.ResourceManager import ResourceManager
+from boto3.dynamodb.conditions import Key, Attr
+
 
 class Filter(Transformer):
     def __init__(self, aws_manager, params):
@@ -17,6 +19,8 @@ class Filter(Transformer):
 
         # Attach parameters to this object
         self.params = params
+        for d in self._defaults:
+            setattr(self, d, self._defaults[d])
         for param in params:
             setattr(self, param, params[param])
 
@@ -56,10 +60,22 @@ class UniqueDynamoDBFilter(Filter):
             "partition_key",
             "partition_key_format_string",
         ]
+        self._optional_keywords = [
+            "range_key",
+            "range_key_type",
+            "range_key_format_string"
+        ]
+        self._defaults = {
+            "range_key_type": "N"
+        }
         super(UniqueDynamoDBFilter, self).__init__(aws_manager, params)
 
     def external_resources(self):
-        table_config = ResourceManager.dynamo_key_schema(self.partition_key)
+        table_config = ResourceManager.dynamo_key_schema(
+            self.partition_key,
+            range_key_name=self.range_key,
+            range_key_type=self.range_key_type
+        )
         table_resource = r.DynamoDBTableResource(
             self._aws_manager, self.dynamodb_table_name,
             attribute_definitions=table_config['attribute_definitions'],
@@ -83,12 +99,21 @@ class UniqueDynamoDBFilter(Filter):
 
     def ddb_row_exists(self, item):
         ddb = self._aws_manager.get_client('dynamodb')
-        key = {}
-        key[self.partition_key] = {'S': self.format_key(item)}
-        res = ddb.get_item(
+        res = ddb.query(
             TableName=self.dynamodb_table_name,
-            Key=key)
-        return 'Item' in res
+            KeyConditionExpression='#PLACEHOLDER = :val',
+            # We'll use a placeholder name in case our key is a dynamo
+            # reserved keyword (very common)
+            ExpressionAttributeNames = {
+                "#PLACEHOLDER": self.partition_key
+            },
+            ExpressionAttributeValues={
+                ':val': {
+                    'S': self.format_key(item)
+                }
+            }
+        )
+        return 'Items' in res and len(res['Items']) > 0
 
     def filter(self, item):
         return not self.ddb_row_exists(item)

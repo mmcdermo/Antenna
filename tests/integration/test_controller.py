@@ -69,7 +69,7 @@ class TestController(unittest.TestCase):
     def test_transformer_lambda_handler(self):
         controller = Controller(self.config)
         #controller.create_resources()
-        item = controller.run_source_job(self.config['sources'][0])[0]
+        controller.run_source_job(self.config['sources'][0])[0]
         input_queue = controller.get_sqs_queue(item.item_type)
         queue_item = None
 

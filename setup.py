@@ -3,7 +3,8 @@ from setuptools import setup, find_packages
 
 install_requires = [
     'click',
-    'boto3==1.4.2',
+    'boto3',
+    'requests'
 ]
 
 setup(

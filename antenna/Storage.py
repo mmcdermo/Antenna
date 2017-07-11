@@ -7,6 +7,8 @@ Transformers/Sources produce items, they're filtered, and then finally persisted
   Transformer/Source ----> Filters -----> Storage
 
 """
+import json
+
 import redleader.resources as r
 from antenna.ResourceManager import ResourceManager
 
@@ -55,16 +57,23 @@ class DynamoDBStorage(Storage):
             "property_mapping",
             "partition_key",
             "partition_key_format_string",
+            "range_key",
+            "range_key_format_string",
+            "range_key_type",
             "update_if_exists"
         ]
         self._defaults = {
-            "update_if_exists": True
+            "update_if_exists": True,
+            "range_key_type": "N",
         }
         super(DynamoDBStorage, self).__init__(aws_manager, params)
 
     def external_resources(self):
-        table_config = ResourceManager.dynamo_key_schema(self.partition_key)
-        print(table_config)
+        table_config = ResourceManager.dynamo_key_schema(
+            self.partition_key,
+            range_key_name=self.range_key,
+            range_key_type=self.range_key_type
+        )
         table_resource = r.DynamoDBTableResource(
             self._aws_manager, self.dynamodb_table_name,
             attribute_definitions=table_config['attribute_definitions'],
@@ -86,21 +95,46 @@ class DynamoDBStorage(Storage):
             base = base.replace("{%s}" % k, str(item.payload[k]))
         return base
 
+    @staticmethod
+    def from_dynamo_dict(dynamo_dict):
+        """
+        {"foo": {"S": "bar"}} => {"foo": "bar"}
+        """
+        d = {}
+        for k in dynamo_dict:
+            d[k] = dynamo_dict[k][list(dynamo_dict[k].keys())[0]]
+        return d
+
+    @staticmethod
+    def dynamo_dict(orig):
+        """
+        Convert an ordinary dictionary into a dynamo-compatible attribute
+        definition dictionary.
+
+        {"foo": "bar"} => {"foo": {"S": "bar"}}
+        """
+        ditem = {}
+        for key in orig:
+            dynamo_value = {}
+            value = orig[key]
+            dynamo_type = "S"
+            if isinstance(value, float) or isinstance(value, int):
+                dynamo_type = "N"
+                dynamo_value[dynamo_type] = json.dumps(value)
+            elif isinstance(value, str):
+                dynamo_value[dynamo_type] = value
+            else:
+                dynamo_value[dynamo_type] = json.dumps(value)
+            if len(dynamo_value[dynamo_type]):
+                ditem[key] = dynamo_value
+        return ditem
+
     def dynamo_item(self, item):
         """
         Transform a consumed item into a dynamodb entry
         """
-        ditem = {}
-        for key in item.payload:
-            if key in self._excluded_item_properties:
-                continue
-            dynamo_value = {}
-            value = item.payload[key]
-            dynamo_type = "S"
-            if isinstance(value, float) or isinstance(value, int):
-                dynamo_type = "N"
-            dynamo_value[dynamo_type] = str(value)
-            ditem[key] = dynamo_value
+        filtered = {k: v for k,v in item.payload.items() if k not in self._excluded_item_properties}
+        ditem = DynamoDBStorage.dynamo_dict(filtered)
 
         # Set the primary key if applicable
         if hasattr(self, "partition_key"):
@@ -121,14 +155,26 @@ class DynamoDBStorage(Storage):
         ddb = self._aws_manager.get_client('dynamodb')
 
         # Attempt to retrieve old item.
-        key = {}
-        key[self.partition_key] = {'S': self.format_key(item)}
-        res = ddb.get_item(
+        ddb = self._aws_manager.get_client('dynamodb')
+        res = ddb.query(
             TableName=self.dynamodb_table_name,
-            Key=key)
+            KeyConditionExpression='#PLACEHOLDER = :val',
+            # We'll use a placeholder name in case our key is a dynamo
+            # reserved keyword (very common)
+            ExpressionAttributeNames = {
+                "#PLACEHOLDER": self.partition_key
+            },
+            ExpressionAttributeValues={
+                ':val': {
+                    'S': self.format_key(item)
+                }
+            }
+        )
+        base_item = {}
+        if 'Items' in res and len(res['Items']) > 0:
+            base_item = res['Items'][0]
 
         # Merge the old and new items together
-        base_item = res.get('Item', {})
         new_item = self.dynamo_item(item)
         for k in new_item:
             base_item[k] = new_item[k]

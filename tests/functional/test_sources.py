@@ -3,8 +3,8 @@
 import unittest
 import json
 import os.path
-from Antenna.Sources import StaticFileSource, RSSFeedSource
-from Antenna.AWSManager import AWSManager
+from antenna.Sources import StaticFileSource, RSSFeedSource, NewspaperLibSource
+from antenna.AWSManager import AWSManager
 
 class TestSources(unittest.TestCase):
     def setUp(self):
@@ -31,3 +31,14 @@ class TestSources(unittest.TestCase):
         manager = AWSManager()
         source = StaticFileSource(manager, config)
         self.assertEqual(source._defaults['item_type'], source.item_type)
+
+    def test_newspaper_lib(self):
+        #http://spectrum.ieee.org/blog/nanoclast
+        config = {
+            'url': 'http://futurism.com',
+            'output_item_type': 'ScrapedArticle'
+        }
+        manager = AWSManager()
+        source = NewspaperLibSource(manager, config)
+        for item in source.yield_items():
+            print(item.payload['url'])

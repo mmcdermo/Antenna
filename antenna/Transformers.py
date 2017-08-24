@@ -170,5 +170,6 @@ class IdentityTransformer(Transformer):
         super(IdentityTransformer, self).__init__(aws_manager, params)
 
     def transform(self, item):
+        print("Identity transformer on ", str(item.payload)[0:100])
         return Item(item_type=self.input_item_types[0],
                      payload=item.payload)

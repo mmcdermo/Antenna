@@ -71,8 +71,8 @@ class DynamoDBStorage(Storage):
     def external_resources(self):
         table_config = ResourceManager.dynamo_key_schema(
             self.partition_key,
-            range_key_name=self.range_key,
-            range_key_type=self.range_key_type
+            range_key_name=getattr(self, "range_key", None),
+            range_key_type=getattr(self, "range_key_type", None)
         )
         table_resource = r.DynamoDBTableResource(
             self._aws_manager, self.dynamodb_table_name,
@@ -102,7 +102,16 @@ class DynamoDBStorage(Storage):
         """
         d = {}
         for k in dynamo_dict:
-            d[k] = dynamo_dict[k][list(dynamo_dict[k].keys())[0]]
+            value = dynamo_dict[k][list(dynamo_dict[k].keys())[0]]
+            try:
+                value = int(value)
+            except ValueError:
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
+
+            d[k] = value
         return d
 
     @staticmethod

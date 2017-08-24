@@ -4,6 +4,7 @@ import os.path
 import click
 import antenna
 import antenna.Controller as Controller
+from antenna.DataMapper import DataMapper
 import time
 import shutil
 
@@ -159,6 +160,49 @@ def run_controller(ctx, aws_profile):
         raise click.Abort()
     controller.run()
 
+@cli.command(name='backfill',
+             help='Run a transformer across data stored in dynamodb'
+)
+@click.argument('dynamodb-table-name')
+@click.argument('transformer-type')
+@click.option('--aws-profile', default=None,
+              help='AWS Profile to use for cluster commands')
+@click.option('--required-null-field', default=None,
+              help='Only backfill over rows where this field is null')
+@click.option('--limit', default=None,
+              help='Maximum number of rows to backfill')
+@click.pass_context
+def backfill(ctx, aws_profile, dynamodb_table_name, transformer_type, required_null_field, limit):
+    if ctx.obj['config_file'] not in os.listdir(ctx.obj['project_dir']):
+        click.echo('No antenna_config.json file found in directory')
+        raise click.Abort()
+
+    config = {}
+    with open(os.path.join(ctx.obj['project_dir'], ctx.obj['config_file']), 'r') as config_file:
+        config = json.load(config_file)
+
+    try:
+        controller = Controller.Controller(config, os.getcwd(), aws_profile=aws_profile)
+        #controller.create_resources()
+    except Exception as e:
+        click.echo('Error with config: %s' % e)
+        raise click.Abort()
+
+    mapper = DataMapper(controller)
+
+    print("Running backfill operation.")
+    if limit is not None:
+        limit = int(limit)
+
+    stats = mapper.local_backfill(dynamodb_table_name,
+                                  "backfill_item_" + dynamodb_table_name,
+                                  transformer_type,
+                                  required_null_field=required_null_field,
+                                  limit=limit
+    )
+    print("Backfill operation complete.")
+    print(json.dumps(stats, indent=4))
+
 @cli.command(name='run-transformer')
 @click.argument('transformer-type')
 @click.argument('item-type')
@@ -181,7 +225,6 @@ def run_transformer(ctx, aws_profile, transformer_type, item_type):
     except Exception as e:
         click.echo('Error with config: %s' % e)
         raise click.Abort()
-
 
     # Note that this selection mechanism will be incorrect
     # if multiple transformers of the same type are present

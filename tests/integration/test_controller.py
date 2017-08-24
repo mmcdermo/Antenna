@@ -1,4 +1,4 @@
-# Copyright 2016 Morgan McDermott & Blake Allen
+# Copyright 2016 Morgan McDermott
 
 import unittest
 import json

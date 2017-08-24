@@ -60,7 +60,7 @@ class ResourceManager(object):
             resources += self.nested_resources(transformer_config)
         constructed_source_conf = {
             "storage": self._controller.config['source_storage'],
-            "filters": self._controller.config['source_filters']
+            "filters": getattr(self._controller.config, 'source_filters', [])
         }
         resources += self.nested_resources(constructed_source_conf)
         return resources

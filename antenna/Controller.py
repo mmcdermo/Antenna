@@ -365,12 +365,12 @@ class Controller(object):
             config, source_path)
         new_item = transformer.transform(input_item)
 
-        print("INPUT ITEM", input_item.payload)
-        input_queue = self.get_sqs_queue(input_item.item_type)
+        print("INPUT ITEM", str(json.dumps(input_item.payload, indent=4))[0:100])
         client = self._aws_manager.get_client('sqs')
 
         print("Deleting message from queue")
-        if use_queues:
+        if use_queues and hasattr(input_item.payload, 'sqs_receipt_handle'):
+            input_queue = self.get_sqs_queue(input_item.item_type)
             resp = client.delete_message(
                 QueueUrl=input_queue.url,
                 ReceiptHandle=input_item.payload['sqs_receipt_handle']

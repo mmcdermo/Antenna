@@ -151,6 +151,7 @@ class NewspaperLibScraper(Transformer):
             print("Date from newspaperlib: %s" % item.payload['time_published'])
         else:
             item.payload['time_published'] = date_extraction_helper(a.html)
+            item.payload['week_published'] = "%s_%s" % (week[0], week[1])
             print("Date from helper: %s" % item.payload['time_published'])
         return Item(
             item_type=self.output_item_type,

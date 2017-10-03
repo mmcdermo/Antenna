@@ -382,8 +382,14 @@ class Controller(object):
         self.store_item(config.get("storage", []), new_item)
         print("Outputting new item on queue")
         if use_queues:
-            output_queue = self.get_sqs_queue(new_item.item_type)
-            output_queue.send_message(MessageBody=json.dumps(new_item.payload))
+            try:
+                output_queue = self.get_sqs_queue(new_item.item_type)
+                output_queue.send_message(MessageBody=json.dumps(new_item.payload))
+            except botocore.exceptions.ClientError as e:
+                if "NonExistentQueue" not in str(e):
+                    raise e
+                else:
+                    print("Output queue non existent. Continuing.")
         print("Created new item on queue %s " % new_item.item_type)
         return new_item
 
@@ -510,6 +516,7 @@ class Controller(object):
             "version": "2.0",
             "app_name": "antenna-%s-monitoring" % self.config['project_name'],
             "autogen_policy": True,
+            "stage": "dev",
             "stages": {
                 "dev": {
                     "api_gateway_stage": "dev"
@@ -520,7 +527,8 @@ class Controller(object):
             'project_dir': package_dir,
             'chalice_app': monitoring_template.app.app,
             'region': self.aws_region,
-            'corn': 2
+            'corn': 2,
+            'stage_vars': {},
         })
 
         # Manually update chalice's lambda function role ARN, since it doesn't yet support

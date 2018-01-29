@@ -9,7 +9,7 @@ install_requires = [
 
 setup(
     name='antenna',
-    version='0.1',
+    version='0.1.2',
     description='Cloud Scraping System',
     author='Morgan McDermott',
     author_email='morganmcdermott@gmail.com',

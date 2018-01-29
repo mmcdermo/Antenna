@@ -17,9 +17,6 @@ import datetime
 import dateutil.parser as dparser
 import requests
 
-
-from antenna.Sources import Item
-
 class Item(object):
     def __init__(self, item_type="", payload={}):
         self.item_type = item_type

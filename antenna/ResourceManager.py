@@ -7,7 +7,7 @@ import redleader.resources as r
 
 class ResourceManager(object):
     """
-    esourceManager coordinates AWS resources for
+    ResourceManager coordinates AWS resources for
     an Antenna controller
     """
     def __init__(self, controller):
@@ -93,10 +93,21 @@ class ResourceManager(object):
             context, self.dynamo_table_name("source_state"),
             attribute_definitions=source_state_config['attribute_definitions'],
             key_schema=source_state_config['key_schema'],
-            write_units=2, read_units=2
+            write_units=20, read_units=20
         )
 
-        return [source_state_table]
+        source_list_config = ResourceManager.dynamo_key_schema("uuid")
+        source_list_table = r.DynamoDBTableResource(
+            context, self.dynamo_table_name("source_list"),
+            attribute_definitions=source_list_config['attribute_definitions'],
+            key_schema=source_list_config['key_schema'],
+            write_units=20, read_units=20
+        )
+
+        return [
+            source_state_table,
+            source_list_table
+        ]
 
     def create_resource_cluster(self):
         """

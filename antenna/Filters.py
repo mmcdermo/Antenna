@@ -73,7 +73,7 @@ class UniqueDynamoDBFilter(Filter):
     def external_resources(self):
         table_config = ResourceManager.dynamo_key_schema(
             self.partition_key,
-            range_key_name=self.range_key,
+            range_key_name=self.range_key if hasattr(self, "range_key") else None,
             range_key_type=self.range_key_type
         )
         table_resource = r.DynamoDBTableResource(

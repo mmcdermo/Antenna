@@ -85,9 +85,7 @@ class Controller(object):
         self.local_queues = {}
 
         for key in config:
-            print("Setting key", key)
             setattr(self, key, config[key])
-
 
         # Deploy cluster on initialization
         self._cluster = self._resource_manager.create_resource_cluster()

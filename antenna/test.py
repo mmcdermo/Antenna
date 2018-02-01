@@ -2,7 +2,7 @@ import boto3
 import json
 from boto3.dynamodb.conditions import Key, Attr
 
-sess = boto3.session.Session(profile_name="signal", region_name="us-west-1")
+sess = boto3.session.Session(region_name="us-west-1")
 
 ddb = sess.client('dynamodb')
 

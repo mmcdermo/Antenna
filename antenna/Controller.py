@@ -63,11 +63,9 @@ class Controller(object):
         print("Controller initialized with source path %s (%s)" %
               (self._source_path, str(source_path)))
 
-        self.validate_config(config)
-        self.config = config
-        self.local_queues = {}
 
         for key in config:
+            print("Setting key", key)
             setattr(self, key, config[key])
 
         for key in self._defaults:
@@ -75,12 +73,23 @@ class Controller(object):
                 setattr(self, key, self._defaults[key])
 
         self._aws_profile = aws_profile
-        self._aws_manager = AWSManager.AWSManager(aws_profile=aws_profile, aws_region=self.aws_region)
+        self._aws_manager = AWSManager.AWSManager(aws_profile=aws_profile,
+                                                  aws_region=self.aws_region)
         self._sqs = self._aws_manager._session.resource('sqs')
         self._sqs_queues = {}
 
-        # Deploy cluster on initialization
         self._resource_manager = ResourceManager.ResourceManager(self)
+        config = self.augment_config_with_dynamodb_data(config)
+        self.validate_config(config)
+        self.config = config
+        self.local_queues = {}
+
+        for key in config:
+            print("Setting key", key)
+            setattr(self, key, config[key])
+
+
+        # Deploy cluster on initialization
         self._cluster = self._resource_manager.create_resource_cluster()
 
         self._transformer_memory_size = 128
@@ -95,6 +104,42 @@ class Controller(object):
             if key not in config:
                 raise Exception('Config must have key %s' % key)
 
+    def augment_config_with_dynamodb_data(self, config):
+        source_list_table_name = self._resource_manager.dynamo_table_name("source_list")
+        client = self._aws_manager.get_client('dynamodb')
+        try:
+            resp = client.scan(TableName=source_list_table_name)
+        except Exception as e:
+            if "ResourceNotFound" in str(e):
+                print("Dynamic DynamoDB source table does not yet exist")
+                return config
+            else:
+                raise e
+
+        print("Augmenting config with dynamodb data")
+        items = {}
+        for item in resp['Items']:
+            d = Storage.DynamoDBStorage.from_dynamo_dict(item)
+            items[d['uuid']] = d
+
+        last_evaluated_key = resp.get('LastEvaluatedKey', None)
+        while last_evaluated_key is not None:
+            for item in resp['Items']:
+                d = Storage.DynamoDBStorage.from_dynamo_dict(item)
+                items[d['uuid']] = d
+
+            resp = client.scan(
+                TableName=source_list_table_name,
+                ExclusiveStartKey=last_evaluated_key)
+
+            last_evaluated_key = resp.get('LastEvaluatedKey', None)
+
+        print("Retrieved " + str(len(items)) + " items from dynamodb")
+        new_sources = [x for x in config['sources']]
+        for item in items:
+            new_sources.append(items[item])
+        config['sources'] = new_sources
+        return config
 
     def create_resources(self, force_update=False):
         """

@@ -61,10 +61,46 @@ class TestController(unittest.TestCase):
         controller.run()
 
         resources = ResourceManager(controller)
-        cluster = resources.createResourceCluster()
+        cluster = resources.create_resource_cluster()
         #print(json.dumps(cluster.cloud_formation_template(), indent=4))
         #self.assertEqual(0, len(controller.local_queues["ArticleReference"]))
         #self.assertTrue(len(controller.local_queues["TransformedReference"]) > 3)
+
+    def test_dynamic_sources(self):
+        controller = Controller(self.config)
+        #
+
+        resources = ResourceManager(controller)
+        try:
+            cluster = resources.create_resource_cluster()
+            cluster.blocking_deploy(verbose=True)
+        except Exception as e:
+            if "AlreadyExists" in str(e):
+                print("Cluster already exists. Continuing")
+                #cluster.blocking_update(verbose=True)
+            else:
+                raise e
+
+        print("Blocking deploy", cluster)
+        print("Table name", resources.dynamo_table_name('source_list'))
+
+
+        client = controller._aws_manager.get_client('dynamodb')
+        response = client.put_item(
+            TableName = resources.dynamo_table_name('source_list'),
+            Item={
+                "uuid": { "S": "CornTest42" },
+                "type": { "S": "RSSFeedSource" },
+                "rss_feed_url": {"S": "http://spectrum.ieee.org/rss/robotics/fulltext"},
+	        "item_type": {"S":"ArticleReference"},
+	        "minutes_between_scrapes": {"N": "120"}
+            }
+        )
+
+        augmented_config = controller.augment_config_with_dynamodb_data(self.config)
+        print("Augmented sources")
+        print(augmented_config['sources'])
+        self.assertTrue(len(augmented_config['sources']) >= 2)
 
     def test_transformer_lambda_handler(self):
         controller = Controller(self.config)

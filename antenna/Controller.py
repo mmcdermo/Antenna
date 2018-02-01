@@ -65,7 +65,6 @@ class Controller(object):
 
 
         for key in config:
-            print("Setting key", key)
             setattr(self, key, config[key])
 
         for key in self._defaults:

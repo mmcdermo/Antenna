@@ -7,7 +7,7 @@ import redleader.resources as r
 
 class ResourceManager(object):
     """
-    ResourceManager coordinates AWS resources for
+    esourceManager coordinates AWS resources for
     an Antenna controller
     """
     def __init__(self, controller):

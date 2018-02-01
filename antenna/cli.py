@@ -8,8 +8,9 @@ from antenna.DataMapper import DataMapper
 import time
 import shutil
 
+v = "0.1.3"
 @click.group()
-@click.version_option(version=antenna.__version__, message='%(prog)s %(version)s')
+@click.version_option(version=v, message='%(prog)s %(version)s')
 @click.option('--debug/--no-debug', default=False,
               help='Write debug logs to standard error.')
 @click.pass_context

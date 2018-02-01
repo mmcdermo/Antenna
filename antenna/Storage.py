@@ -102,15 +102,16 @@ class DynamoDBStorage(Storage):
         """
         d = {}
         for k in dynamo_dict:
-            value = dynamo_dict[k][list(dynamo_dict[k].keys())[0]]
-            try:
-                value = int(value)
-            except ValueError:
+            ty_key = list(dynamo_dict[k].keys())[0]
+            value = dynamo_dict[k][ty_key]
+            if ty_key == "N":
                 try:
-                    value = float(value)
+                    value = int(value)
                 except ValueError:
-                    pass
-
+                    try:
+                        value = float(value)
+                    except ValueError:
+                        pass
             d[k] = value
         return d
 

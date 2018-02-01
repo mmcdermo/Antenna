@@ -16,6 +16,7 @@ import datefinder
 import datetime
 import dateutil.parser as dparser
 import requests
+import hashlib
 
 class Item(object):
     def __init__(self, item_type="", payload={}):

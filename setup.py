@@ -9,7 +9,7 @@ install_requires = [
 
 setup(
     name='antenna',
-    version='0.1.3',
+    version='0.1.4',
     description='Cloud Scraping System',
     author='Morgan McDermott',
     author_email='morganmcdermott@gmail.com',
@@ -25,6 +25,7 @@ setup(
             'antenna = antenna.cli:main',
         ]
     },
+    package_data={'': ['lambda_env/*']},
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Intended Audience :: Developers',

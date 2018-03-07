@@ -35,7 +35,8 @@ class TestSources(unittest.TestCase):
 
     def test_rss_feed_source(self):
         config = {
-            "rss_feed_url": "https://qz.com/feed/"
+            "rss_feed_url": "https://www.google.com/alerts/feeds/11517210187050766775/46586222971187936",
+            "keywords": ["Biotechnology", "AI"]
         }
         manager = AWSManager()
         source = RSSFeedSource(manager, config)
@@ -44,10 +45,12 @@ class TestSources(unittest.TestCase):
         items = list(source.yield_items())
         self.assertTrue(len(items) > 3)
         for item in items:
+            #print(item.payload.keys())
             self.assertTrue(len(item.payload['url']) > 10)
             self.assertTrue(len(item.payload['content']) > 10)
             self.assertTrue(len(item.payload['source_url']) > 4)
             self.assertTrue(len(item.payload['title']) > 10)
+            self.assertTrue((item.payload['source_keywords']) == ["Biotechnology", "AI"])
 
         # TODO - need to implement state saving mechanism for this to be accurate
         # self.assertFalse(source.has_new_data())

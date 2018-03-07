@@ -155,7 +155,8 @@ class RSSFeedSource(Source):
             "rss_feed_url"
         ]
         self._optional_keywords = [
-            "minutes_between_scrapes"
+            "minutes_between_scrapes",
+            "keywords"
         ]
         self._defaults = {
             'item_type': 'ArticleReference',
@@ -171,6 +172,12 @@ class RSSFeedSource(Source):
         # last article was seen
         print("RSS Feed last run at %s" % self.state['time_last_updated'])
         return time.time() - float(self.state['time_last_updated']) > 60 * self.minutes_between_scrapes
+
+    def get_keywords(self):
+        if hasattr(self, "keywords"):
+            return self.keywords
+        else:
+            return []
 
     def yield_items(self):
         self.state = {
@@ -190,6 +197,7 @@ class RSSFeedSource(Source):
                            'url': entry['link'],
                            'content': content,
                            'source_type': 'RSS',
+                           'source_keywords': self.get_keywords(),
                            'time_sourced': time.time(),
                            'domain': urlparse(self.rss_feed_url).netloc,
                            'source_url': self.rss_feed_url,

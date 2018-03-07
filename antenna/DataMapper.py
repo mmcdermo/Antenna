@@ -12,7 +12,10 @@ class DataMapper():
                        dynamodb_table_name,
                        output_item_type,
                        transformer_type,
-                       required_null_field="",
+                       index_name=None,
+                       partition_key=None,
+                       partition_key_value=None,
+                       required_null_field=None,
                        limit=False,
                        verbose=True
     ):
@@ -23,11 +26,20 @@ class DataMapper():
         if(required_null_field == None):
             resp = client.scan(TableName=dynamodb_table_name)
         else:
-            resp = client.scan(
+            resp = client.query(
                 TableName=dynamodb_table_name,
-                FilterExpression="attribute_not_exists(" +
-                required_null_field + ")")
+                IndexName=index_name,
+                ExpressionAttributeValues= {
+                    ":pkeyvalue": {"S": partition_key_value}
+                },
+                FilterExpression="attribute_not_exists(" + required_null_field + ")",
+                KeyConditionExpression=partition_key + " = :pkeyvalue"
+                #FilterExpression="attribute_not_exists(" +
+                #required_null_field + ") AND "+ partition_key +
+                #" = :pkeyvalue"
+            )
 
+        print("RESP RETRIEVED")
         last_evaluated_key = resp['LastEvaluatedKey']
 
         # Note that this selection mechanism will be incorrect
@@ -55,10 +67,19 @@ class DataMapper():
                     ExclusiveStartKey=last_evaluated_key,
                     TableName=dynamodb_table_name)
             else:
-                resp = client.scan(
+                resp = client.query(
                     TableName=dynamodb_table_name,
-                    ExclusiveStartKey=last_evaluated_key,
-                    FilterExpression="attribute_not_exists(" +
-                    required_null_field + ")")
+                    IndexName=index_name,
+                    ExpressionAttributeValues= {
+                        ":pkeyvalue": {"S": partition_key_value}
+                    },
+                    FilterExpression="attribute_not_exists(" + required_null_field + ")",
+                    KeyConditionExpression=partition_key + " = :pkeyvalue",
+                    ExclusiveStartKey=last_evaluated_key
+                )
+
+            if 'LastEvaluatedKey' not in resp:
+                print("Response has no LastEvaluatedKey. Terminating backfill")
+                return
 
             last_evaluated_key = resp['LastEvaluatedKey']

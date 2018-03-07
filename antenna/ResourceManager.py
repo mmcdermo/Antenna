@@ -57,6 +57,7 @@ class ResourceManager(object):
                 transformer_config,
                 self._controller._source_path
             ).external_resources()
+            print("Generated transformer resources", resources)
             resources += self.nested_resources(transformer_config)
         constructed_source_conf = {
             "storage": self._controller.config['source_storage'],

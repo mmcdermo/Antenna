@@ -166,6 +166,9 @@ def run_controller(ctx, aws_profile):
 )
 @click.argument('dynamodb-table-name')
 @click.argument('transformer-type')
+@click.option('--index-name', default=None)
+@click.option('--partition-key', default=None)
+@click.option('--partition-key-value', default=None)
 @click.option('--aws-profile', default=None,
               help='AWS Profile to use for cluster commands')
 @click.option('--required-null-field', default=None,
@@ -173,7 +176,7 @@ def run_controller(ctx, aws_profile):
 @click.option('--limit', default=None,
               help='Maximum number of rows to backfill')
 @click.pass_context
-def backfill(ctx, aws_profile, dynamodb_table_name, transformer_type, required_null_field, limit):
+def backfill(ctx, aws_profile, dynamodb_table_name, transformer_type, index_name, partition_key, partition_key_value, required_null_field, limit):
     if ctx.obj['config_file'] not in os.listdir(ctx.obj['project_dir']):
         click.echo('No antenna_config.json file found in directory')
         raise click.Abort()
@@ -198,7 +201,10 @@ def backfill(ctx, aws_profile, dynamodb_table_name, transformer_type, required_n
     stats = mapper.local_backfill(dynamodb_table_name,
                                   "backfill_item_" + dynamodb_table_name,
                                   transformer_type,
+                                  index_name=index_name,
                                   required_null_field=required_null_field,
+                                  partition_key=partition_key,
+                                  partition_key_value=partition_key_value,
                                   limit=limit
     )
     print("Backfill operation complete.")

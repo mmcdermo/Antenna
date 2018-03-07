@@ -1,4 +1,4 @@
-# Copyright 2016 Morgan McDermott & Blake Allen"""
+ # Copyright 2016 Morgan McDermott & Blake Allen"""
 """
 
 The Controller class coordinates the creation of Sources and Transformers.
@@ -13,7 +13,7 @@ import boto3
 import shutil
 import datetime
 import importlib
-from zipfile import ZipFile
+from zipfile import ZipFile, ZIP_DEFLATED
 from threading import Thread
 
 import antenna.Sources as Sources
@@ -273,11 +273,28 @@ class Controller(object):
 
     def instantiate_source(self, config, skip_loading_state=False):
         if config['type'] not in sourceClassMap:
-            raise Exception('Unknown source type %s ' % config['type'])
+            if "." not in config['type']:
+                raise Exception('Unknown source type %s ' % config['type'])
+            source = self.import_source(config['type'], self._source_path)
+            return source(self._aws_manager, config)
+
         source = sourceClassMap[config['type']](self._aws_manager, config)
         if not skip_loading_state:
             source.set_state(self.get_source_state(source))
         return source
+
+    def import_source(self, classpath, source_path):
+        """
+        Imports a Source
+        e.g.) given the path "source.MyCustomSource", imports:
+              import MyCustomSource from sources
+        """
+        relpath = os.path.join(*(classpath.split('.')[:-1])) + '.py'
+        fullpath = os.path.join(source_path, relpath)
+        spec = importlib.util.spec_from_file_location(classpath.split(".")[-2], fullpath)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return getattr(module, classpath.split(".")[-1])
 
     def get_source_state(self, source):
         source_config_hash = source.config_hash()
@@ -742,7 +759,8 @@ def create_lambda_package(source_path=None):
     template_files = filter(lambda x: "py" in x and "pyc" not in x and "~" not in x and ".#" not in x
                             , template_files)
 
-    with ZipFile(zipfilepath, 'w') as zipfile:
+    with ZipFile(zipfilepath, 'w', ZIP_DEFLATED) as zipfile:
+        print("Opened compressed zipfile")
         for filename in antenna_files:
             zipfile.write(os.path.join(antenna_dir, filename), "antenna/%s" % filename)
         for filename in template_files:

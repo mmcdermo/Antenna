@@ -122,20 +122,28 @@ class DynamoDBStorage(Storage):
         definition dictionary.
 
         {"foo": "bar"} => {"foo": {"S": "bar"}}
+
+        Current supports:
+        "N": Numeric values (float, int)
+        "S": Strings
+        "BOOL": Boolean values
         """
         ditem = {}
         for key in orig:
             dynamo_value = {}
             value = orig[key]
             dynamo_type = "S"
-            if isinstance(value, float) or isinstance(value, int):
+            if isinstance(value, bool):
+                dynamo_type = "S"
+                dynamo_value[dynamo_type] = "\"" + str(json.dumps(value)) + "\""
+            elif isinstance(value, float) or isinstance(value, int):
                 dynamo_type = "N"
                 dynamo_value[dynamo_type] = json.dumps(value)
             elif isinstance(value, str):
                 dynamo_value[dynamo_type] = value
             else:
                 dynamo_value[dynamo_type] = json.dumps(value)
-            if len(dynamo_value[dynamo_type]):
+            if isinstance(value, bool) or len(dynamo_value[dynamo_type]):
                 ditem[key] = dynamo_value
         return ditem
 

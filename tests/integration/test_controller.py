@@ -165,6 +165,7 @@ class TestController(unittest.TestCase):
 
         function_name = "test%s" % random.randrange(100000000)
 
+        # TODO
         res = create_lambda_function(function_name,
                                      role_arn,
                                      controller._aws_manager.get_client('lambda'),

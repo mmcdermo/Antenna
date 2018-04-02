@@ -345,6 +345,17 @@ class Controller(object):
         self.update_source_state(source)
         return items
 
+    def strip_sources(self, config):
+        """
+        Strip sources from a config so that its size doesn't exceed
+        lambda's maximum limits
+        """
+        config_copy = {}
+        for k in config:
+            if k != "sources":
+                config_copy[k] = config[k]
+        return config_copy
+
     def create_source_job(self, config):
         """
         Spawn a job for the given source config
@@ -352,11 +363,12 @@ class Controller(object):
         source = self.instantiate_source(config)
         if source.has_new_data():
             print("Spawning job for source %s" % config['type'])
+            print(json.dumps(config, indent=4))
             if True == self.local_jobs:
                 self.run_source_job(config)
             else:
                 event = {
-                    'controller_config': json.dumps(self.config),
+                    'controller_config': json.dumps(self.strip_sources(self.config)),
                     'source_config': json.dumps(config)
                 }
                 response = self._aws_manager.get_client('lambda').invoke(
@@ -645,7 +657,6 @@ class Controller(object):
 
     def run(self):
         for sourceConfig in self.sources:
-            print("Creating a source job")
             self.create_source_job(sourceConfig)
 
         # We create one transformer job for each transformer, with the same

@@ -140,6 +140,41 @@ def run_source(ctx, search_key, aws_profile):
 
     print(json.dumps(list(map(lambda x: x.payload, items)), indent=4))
 
+@cli.command(name='run-source-and-aggregate-transformer')
+@click.argument('search_key')
+@click.option('--aws-profile', default=None,
+              help='AWS Profile to use for cluster commands')
+@click.pass_context
+def run_source_and_aggregate_transformer(ctx, search_key, aws_profile):
+    if ctx.obj['config_file'] not in os.listdir(ctx.obj['project_dir']):
+        click.echo('No antenna_config.json file found in directory')
+        raise click.Abort()
+
+    config = {}
+    with open(os.path.join(ctx.obj['project_dir'], ctx.obj['config_file']), 'r') as config_file:
+        config = json.load(config_file)
+
+    try:
+        controller = Controller.Controller(config, os.getcwd(), aws_profile = aws_profile)
+        #controller.create_resources()
+    except Exception as e:
+        click.echo('Error with config: %s' % e)
+        raise click.Abort()
+
+    items = []
+    for source in controller.config['sources']:
+        found = False
+        for k in source:
+            if search_key in str(source[k]).lower():
+                found = True
+                break
+        if found:
+            print("Found source: ")
+            print(json.dumps(source, indent=4))
+            items += controller.run_source_and_aggregate_transformer(source)
+
+        print(len(list(map(lambda x: x.payload, items))))
+
 @cli.command(name='run-controller')
 @click.option('--aws-profile', default=None,
               help='AWS Profile to use for cluster commands')
@@ -161,6 +196,27 @@ def run_controller(ctx, aws_profile):
         raise click.Abort()
     controller.run()
 
+@cli.command(name='run-aggregate-controller')
+@click.option('--aws-profile', default=None,
+              help='AWS Profile to use for cluster commands')
+@click.pass_context
+def run_aggregate_controller_local(ctx, aws_profile):
+    if ctx.obj['config_file'] not in os.listdir(ctx.obj['project_dir']):
+        click.echo('No antenna_config.json file found in directory')
+        raise click.Abort()
+
+    config = {}
+    with open(os.path.join(ctx.obj['project_dir'], ctx.obj['config_file']), 'r') as config_file:
+        config = json.load(config_file)
+
+    try:
+        controller = Controller.Controller(config, os.getcwd(), aws_profile=aws_profile)
+        controller.create_resources()
+    except Exception as e:
+        click.echo('Error with config: %s' % e)
+        raise click.Abort()
+    controller.run_aggregate_controller_job(local=True)
+
 @cli.command(name='backfill',
              help='Run a transformer across data stored in dynamodb'
 )
@@ -169,6 +225,9 @@ def run_controller(ctx, aws_profile):
 @click.option('--index-name', default=None)
 @click.option('--partition-key', default=None)
 @click.option('--partition-key-value', default=None)
+@click.option('--min-key', default=None)
+@click.option('--min-value', default=None)
+
 @click.option('--aws-profile', default=None,
               help='AWS Profile to use for cluster commands')
 @click.option('--required-null-field', default=None,
@@ -176,7 +235,7 @@ def run_controller(ctx, aws_profile):
 @click.option('--limit', default=None,
               help='Maximum number of rows to backfill')
 @click.pass_context
-def backfill(ctx, aws_profile, dynamodb_table_name, transformer_type, index_name, partition_key, partition_key_value, required_null_field, limit):
+def backfill(ctx, aws_profile, dynamodb_table_name, transformer_type, index_name, partition_key, partition_key_value, min_key, min_value, required_null_field, limit):
     if ctx.obj['config_file'] not in os.listdir(ctx.obj['project_dir']):
         click.echo('No antenna_config.json file found in directory')
         raise click.Abort()
@@ -205,6 +264,8 @@ def backfill(ctx, aws_profile, dynamodb_table_name, transformer_type, index_name
                                   required_null_field=required_null_field,
                                   partition_key=partition_key,
                                   partition_key_value=partition_key_value,
+                                  min_key=min_key,
+                                  min_value=min_value,
                                   limit=limit
     )
     print("Backfill operation complete.")
@@ -273,7 +334,20 @@ def deploy(ctx, aws_profile, recreate_permissions):
     controller.create_lambda_functions()
 
     # Schedule master lambda
-    controller.schedule_controller_lambda()
+    #controller.schedule_controller_lambda()
+
+    controller.schedule_source_controller_lambda()
+    if config["aggregate_transformer_only"]:
+        print("Scheduling aggregate transformer lambda")
+        controller.schedule_aggregate_controller_lambda()
+    else:
+        print("""
+          Scheduling standard transformer lambda controller.
+          For performance reasons, consider setting
+          "aggregate_transformer_only": true in your config
+        """)
+        controller.schedule_transformer_controller_lambda()
+
 
 def main():
     cli(obj={})

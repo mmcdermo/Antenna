@@ -28,6 +28,16 @@
 		"primary_key": "url",
 		"primary_key_format_string": "{url}"
 	    }]
+        },
+        {
+            "type": "transformers.CustomTestTransformer",
+            "dynamodb_table_name": "testAntenna_scraped_article"
+	    "storage": [{
+		"type": "DynamoDBStorage",
+		"dynamodb_table_name": "testAntenna_article_ref_storage"
+		"primary_key": "url",
+		"primary_key_format_string": "{url}"
+	    }]
         }
     ]
 }

@@ -22,6 +22,9 @@ class ResourceManager(object):
     def dead_letter_queue_name(self, item_type):
         return self._controller.project_name + item_type + "DeadLetterQueue"
 
+    def aggregate_queue_name(self):
+        return self._controller.project_name + "AggregateQueue"
+
     def nested_resources(self, conf):
         """
         Extracts resources from nested `filters` and `storage` objects
@@ -130,6 +133,11 @@ class ResourceManager(object):
                                                    is_static=False)
             cluster.add_resource(dead_letter_queue)
             cluster.add_resource(queues[item_type])
+
+        aggregate_queue = r.SQSQueueResource(context,
+                                             self.aggregate_queue_name(),
+                                             is_static=False)
+        cluster.add_resource(aggregate_queue)
 
         # Create a ref to cloudwatch logs so we can create an appropriate role
         logs = r.CloudWatchLogs(context)

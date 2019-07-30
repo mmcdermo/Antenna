@@ -26,7 +26,7 @@ import json
 import time
 import newspaper
 import calendar
-
+import dateutil.parser
 from urllib.parse import urlparse
 
 class Item(object):
@@ -156,7 +156,8 @@ class RSSFeedSource(Source):
         ]
         self._optional_keywords = [
             "minutes_between_scrapes",
-            "keywords"
+            "keywords",
+            "trusted_source"
         ]
         self._defaults = {
             'item_type': 'ArticleReference',
@@ -173,6 +174,9 @@ class RSSFeedSource(Source):
         print("RSS Feed last run at %s" % self.state['time_last_updated'])
         return time.time() - float(self.state['time_last_updated']) > 60 * self.minutes_between_scrapes
 
+    def is_trusted_source(self):
+        return hasattr(self, "trusted_source")
+
     def get_keywords(self):
         if hasattr(self, "keywords"):
             return self.keywords
@@ -186,11 +190,17 @@ class RSSFeedSource(Source):
         feed = feedparser.parse(self.rss_feed_url)
         for entry in feed['entries']:
             timestamp = calendar.timegm(entry['published_parsed'])
-            content = entry['summary']
+            print("Timestamp from pubDate", timestamp)
+            content = ""
+            print("ENTRY LINK")
+            print(entry['link'])
             try:
-                content = entry['content'][0]['value']
-            except Exception as e:
-                pass
+                content = entry['summary']
+            except KeyError as e:
+                try:
+                    content = entry['content'][0]['value']
+                except Exception as e:
+                    pass
             yield Item(item_type=self.item_type,
                        payload={
                            'title': entry['title'],
@@ -198,11 +208,12 @@ class RSSFeedSource(Source):
                            'content': content,
                            'source_type': 'RSS',
                            'source_keywords': self.get_keywords(),
+                           'trusted_source': self.is_trusted_source(),
                            'time_sourced': time.time(),
                            'domain': urlparse(self.rss_feed_url).netloc,
                            'source_url': self.rss_feed_url,
                            'time_published': timestamp,
-                           'summary': entry['summary']
+                           'summary': content
                        })
 
 
@@ -222,7 +233,8 @@ class NewspaperLibSource(Source):
             'minutes_between_scrapes': 10,
         }
         self._optional_keywords = [
-            "minutes_between_scrapes"
+            "minutes_between_scrapes",
+            "trusted_source"
         ]
         self.state = {
             "time_last_updated": 0
@@ -234,6 +246,10 @@ class NewspaperLibSource(Source):
         # last article was seen
         print("RSS Feed last run at %s" % self.state['time_last_updated'])
         return time.time() - float(self.state['time_last_updated']) > 60 * self.minutes_between_scrapes
+
+    def is_trusted_source(self):
+        return hasattr(self, "trusted_source")
+
 
     def yield_items(self):
         self.state = {
@@ -248,7 +264,8 @@ class NewspaperLibSource(Source):
                 'source_type': 'NewspaperLib',
                 'time_sourced': time.time(),
                 'domain': urlparse(self.url).netloc,
-                'source_url': self.url
+                'source_url': self.url,
+                'trusted_source': self.is_trusted_source()
             }
             yield Item(
                 item_type=self.item_type,

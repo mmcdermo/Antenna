@@ -10,7 +10,7 @@ import zipfile
 import os
 from antenna.Controller import Controller, create_lambda_package, cleanup_lambda_package, create_lambda_function
 from antenna.ResourceManager import ResourceManager
-from antenna.lambda_handlers import transformer_handler, source_handler, controller_handler
+from antenna.lambda_handlers import transformer_handler, source_handler, controller_handler, aggregate_transformer_handler, aggregate_controller_handler
 
 class TestController(unittest.TestCase):
     def setUp(self):
@@ -22,7 +22,8 @@ class TestController(unittest.TestCase):
             'sources': [
                 {
                     "type": "RSSFeedSource",
-                    "rss_feed_url": "https://qz.com/feed/"
+                    "rss_feed_url": "https://qz.com/feed/",
+                    "item_type": "ArticleReference"
                 }
             ],
             "source_storage": [{
@@ -48,13 +49,39 @@ class TestController(unittest.TestCase):
                         "partition_key": "my_hash_key",
                         "partition_key_format_string": "{url}"
                     }]
+                },
+                {
+                    "type": "IdentityTransformer",
+                    "input_item_types": ["TransformedReference"],
+                    "output_item_types": ["TransformedReference"],
+                    "storage": [{
+                        "type": "DynamoDBStorage",
+                        "dynamodb_table_name": "antenna_test_table",
+                        "partition_key": "my_hash_key",
+                        "partition_key_format_string": "{url}"
+                    }],
+                    "filters": [{
+                        "type": "UniqueDynamoDBFilter",
+                        "dynamodb_table_name": "antenna_test_table",
+                        "partition_key": "my_hash_key",
+                        "partition_key_format_string": "{url}"
+                    }]
                 }
+
             ]
         }
 
     def tearDown(self):
         controller = Controller(self.config)
         controller.drain_queues()
+
+    def test_run_sources(self):
+        controller = Controller(self.config)
+        controller.run_sources()
+
+    def test_run_transformers(self):
+        controller = Controller(self.config)
+        controller.run_transformers()
 
     def test_controller(self):
         controller = Controller(self.config)
@@ -121,6 +148,34 @@ class TestController(unittest.TestCase):
             }
             transformer_handler(event, None)
 
+    def test_aggregate_transformer_lambda_handler(self):
+        controller = Controller(self.config)
+        #controller.create_resources()
+        item = controller.run_source_job(self.config['sources'][0])[0]
+        input_queue = controller.get_sqs_queue(item.item_type)
+        queue_item = None
+
+        time.sleep(1)
+        for message in input_queue.receive_messages():
+            queue_item = controller.item_from_message_payload(item.item_type, message, input_queue.url)
+            print("Message", message)
+            print(queue_item.payload)
+            event = {
+                'controller_config': json.dumps(self.config),
+                'transformer_config': json.dumps(self.config['transformers'][0]),
+                'item': json.dumps({"item_type": queue_item.item_type, "payload": queue_item.payload})
+            }
+            aggregate_transformer_handler(event, None)
+
+    def test_aggregate_controller_lambda_handler(self):
+        controller = Controller(self.config)
+        #controller.create_resources()
+        controller.create_lambda_functions()
+        event = {
+            'controller_config': json.dumps(self.config),
+        }
+        aggregate_controller_handler(event, None)
+
     def test_source_lambda_handler(self):
         controller = Controller(self.config)
         controller.create_resources()
@@ -158,6 +213,7 @@ class TestController(unittest.TestCase):
         controller = Controller(self.config)
         controller.create_resources()
         controller.create_lambda_functions()
+        print("Lambda functions created")
 
         role_arn = controller.get_lambda_role_arn()
         client = controller._aws_manager.get_client('lambda')

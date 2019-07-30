@@ -130,7 +130,6 @@ class NewspaperLibScraper(Transformer):
         a.download()
         a.parse()
 
-
         # Extract date using readability, since
         # newspaper's date extraction is unreliable
         #doc = Document(a.html)
@@ -142,17 +141,20 @@ class NewspaperLibScraper(Transformer):
         item.payload['movies'] = list(a.movies)
         item.payload['authors'] = list(a.authors)
         item.payload['scrape_time'] = time.time()
-        if a.publish_date is not None:
+        if item.payload.get('time_published', None) is not None:
+            # If we already have a time_published (e.g. from RSS),
+            #   - do nothing
+            print("Time published from source:", item.payload.get('time_published'))
+            pass
+        elif a.publish_date is not None:
             item.payload['time_published'] = calendar.timegm(a.publish_date.timetuple())
-            week = datetime.date.fromtimestamp(item.payload['time_published']).isocalendar()
-            item.payload['week_published'] = "%s_%s" % (week[0], week[1])
-            print("Date from newspaperlib: %s" % item.payload['time_published'])
+            print("Time published from newspaperlib: %s" % item.payload['time_published'])
         else:
-            item.payload['time_published'] = date_extraction_helper(a.html)
-            week = datetime.date.fromtimestamp(item.payload['time_published']).isocalendar()
-            item.payload['week_published'] = "%s_%s" % (week[0], week[1])
+            item.payload['time_published'] = time.time()
             item.payload['time_published_inferred'] = True
-            print("Date from helper: %s" % item.payload['time_published'])
+            print("Time published from helper: %s" % item.payload['time_published'])
+        week = datetime.date.fromtimestamp(item.payload['time_published']).isocalendar()
+        item.payload['week_published'] = "%s_%s" % (week[0], week[1])
         return Item(
             item_type=self.output_item_type,
             payload=item.payload)
@@ -166,7 +168,7 @@ class IdentityTransformer(Transformer):
     def __init__(self, aws_manager, params):
         self._required_keywords = [
             "input_item_types",
-            "output_item_types"
+            "output_item_type"
         ]
         super(IdentityTransformer, self).__init__(aws_manager, params)
 

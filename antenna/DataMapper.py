@@ -17,7 +17,9 @@ class DataMapper():
                        partition_key_value=None,
                        required_null_field=None,
                        limit=False,
-                       verbose=True
+                       verbose=True,
+                       min_key=None,
+                       min_value=None
     ):
         client = self.controller._aws_manager.get_client('dynamodb')
 
@@ -26,14 +28,18 @@ class DataMapper():
         if(required_null_field == None):
             resp = client.scan(TableName=dynamodb_table_name)
         else:
+            attr_values = {
+                ":pkeyvalue": {"S": partition_key_value},
+                ":minvalue" : {"N" : min_value}
+            }
+            print("SCAN WITH", "attribute_not_exists(" + required_null_field + ") and attribute_exists(" + min_key + ") and " + min_key + " > :minvalue", min_value)
             resp = client.query(
                 TableName=dynamodb_table_name,
                 IndexName=index_name,
-                ExpressionAttributeValues= {
-                    ":pkeyvalue": {"S": partition_key_value}
-                },
-                FilterExpression="attribute_not_exists(" + required_null_field + ")",
-                KeyConditionExpression=partition_key + " = :pkeyvalue"
+                ExpressionAttributeValues=attr_values ,
+                FilterExpression="attribute_not_exists(" + required_null_field + ")", # and attribute_exists(" + min_key + ") and " + min_key + " > :minvalue",
+                #attribute_exists(" + min_key + ")
+                KeyConditionExpression= partition_key + " = :pkeyvalue and " + min_key + " > :minvalue"
                 #FilterExpression="attribute_not_exists(" +
                 #required_null_field + ") AND "+ partition_key +
                 #" = :pkeyvalue"
@@ -58,8 +64,11 @@ class DataMapper():
                 transformed = self.controller.run_transformer_job(transformer_config,
                                                     Item(payload=d),
                                                     os.getcwd())
-                print(json.dumps(transformed.payload, indent=4)[0:100])
-                i += 1
+                if transformed is not None:
+                    print(json.dumps(transformed.payload, indent=4)[0:100])
+                    i += 1
+                else:
+                    print("Filtered item", transformed)
                 print("Transformed " + str(i) + " items")
 
             if(required_null_field == None):

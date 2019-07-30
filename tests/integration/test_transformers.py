@@ -85,3 +85,48 @@ class TestTransformers(unittest.TestCase):
 
         cleanup_lambda_package()
         response = client.delete_function(FunctionName=function_name)
+
+
+    def test_newspaperlib_transformer(self):
+        source_path = os.path.join(*(["/"] + (__file__.split("/")[:-2]) + ["test_data"]))
+        controller = Controller(self.config, source_path)
+        controller.create_resources()
+        controller.create_lambda_functions()
+
+        role_arn = controller.get_lambda_role_arn()
+        client = controller._aws_manager.get_client('lambda')
+        print("ARN: %s" % role_arn)
+
+        function_name = "test%s" % random.randrange(100000000)
+
+        res = create_lambda_function(function_name,
+                                     role_arn,
+                                     controller._aws_manager.get_client('lambda'),
+                                     "lambda_handlers.transformer_handler")
+
+        controller = Controller(self.config, source_path)
+        item = controller.run_source_job(self.config['sources'][0])[0]
+        input_queue = controller.get_sqs_queue(item.item_type)
+        queue_item = None
+        time.sleep(1)
+        for message in input_queue.receive_messages():
+            queue_item = controller.item_from_message_payload(item.item_type, message, input_queue.url)
+            break
+
+        event = {
+            'controller_config': json.dumps(self.config),
+            'transformer_config': json.dumps(self.config['transformers'][0]),
+            'item': json.dumps({"item_type": queue_item.item_type, "payload": queue_item.payload})
+        }
+
+        response = client.invoke(
+            FunctionName=function_name,
+            InvocationType='RequestResponse',
+            Payload=json.dumps(event)
+        )
+        payload = str(response['Payload'].read())
+        print("Response payload", payload)
+        self.assertEqual(json.loads(payload)['status'], 'OK')
+
+        cleanup_lambda_package()
+        response = client.delete_function(FunctionName=function_name)

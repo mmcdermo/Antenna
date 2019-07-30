@@ -45,15 +45,15 @@ filterClassMap = {
 }
 
 class Controller(object):
-    def __init__(self, config, source_path=None, aws_profile=None):
+    def __init__(self, config, source_path=None, aws_profile=None, no_deploy=False):
         self._defaults = {
             'local_controller': False,
             'local_jobs': False,
             'local_queue': False,
             'controller_schedule': 5, # Run the controller every N minutes
             'aws_region': 'us-west-1',
-            'runtime': 60 # Maximum runtime defaults to 60s. This applies to transformer
-                          # queue jobs only (typically the longest running portion)
+            'runtime': 250 # Maximum runtime defaults to 60s. This applies to transformer
+                          # queue jobs only (typically the running portion)
 
         }
 
@@ -78,7 +78,7 @@ class Controller(object):
         self._sqs_queues = {}
 
         self._resource_manager = ResourceManager.ResourceManager(self)
-        config = self.augment_config_with_dynamodb_data(config)
+        #config = self.augment_config_with_dynamodb_data(config)
         self.validate_config(config)
         self.config = config
         self.local_queues = {}
@@ -87,7 +87,8 @@ class Controller(object):
             setattr(self, key, config[key])
 
         # Deploy cluster on initialization
-        self._cluster = self._resource_manager.create_resource_cluster()
+        if not no_deploy:
+            self._cluster = self._resource_manager.create_resource_cluster()
 
         self._transformer_memory_size = 128
         self._source_memory_size = 128
@@ -104,6 +105,7 @@ class Controller(object):
     def augment_config_with_dynamodb_data(self, config):
         source_list_table_name = self._resource_manager.dynamo_table_name("source_list")
         client = self._aws_manager.get_client('dynamodb')
+        print("Augmenting config with dynamodb data")
         try:
             resp = client.scan(TableName=source_list_table_name)
         except Exception as e:
@@ -169,6 +171,18 @@ class Controller(object):
     def controller_lambda_name(self):
         return "%sController" % (self.config['project_name'])
 
+    def source_controller_lambda_name(self):
+        return "%sSourceController" % (self.config['project_name'])
+
+    def transformer_controller_lambda_name(self):
+        return "%sTransformerController" % (self.config['project_name'])
+
+    def aggregate_transformer_lambda_name(self):
+        return "%sAggregateTransformer" % (self.config['project_name'])
+
+    def aggregate_controller_lambda_name(self):
+        return "%sAggregateController" % (self.config['project_name'])
+
     def config_bucket_name(self):
         return "%sconfigbucket" % redleader.util.sanitize((self.config['project_name']).lower())
 
@@ -181,6 +195,45 @@ class Controller(object):
                                zipfilepath,
                                "lambda_handlers.controller_handler",
                                memory_size=self._controller_memory_size)
+
+        # Create source controller lambda function
+        zipfilepath = create_lambda_package(self._source_path)
+        create_lambda_function(self.source_controller_lambda_name(),
+                               self.get_lambda_role_arn(),
+                               self._aws_manager.get_client('lambda'),
+                               zipfilepath,
+                               "lambda_handlers.source_controller_handler",
+                               memory_size=self._controller_memory_size)
+
+        # Create transformer controller lambda function
+        zipfilepath = create_lambda_package(self._source_path)
+        create_lambda_function(self.transformer_controller_lambda_name(),
+                               self.get_lambda_role_arn(),
+                               self._aws_manager.get_client('lambda'),
+                               zipfilepath,
+                               "lambda_handlers.transformer_controller_handler",
+                               memory_size=self._controller_memory_size)
+
+        # Create aggregate transformer lambda function
+        zipfilepath = create_lambda_package(self._source_path)
+        create_lambda_function(self.aggregate_controller_lambda_name(),
+                               self.get_lambda_role_arn(),
+                               self._aws_manager.get_client('lambda'),
+                               zipfilepath,
+                               "lambda_handlers.aggregate_controller_handler",
+                               memory_size=self._controller_memory_size)
+
+        # Create aggregate transformer lambda function
+        zipfilepath = create_lambda_package(self._source_path)
+        create_lambda_function(self.aggregate_transformer_lambda_name(),
+                               self.get_lambda_role_arn(),
+                               self._aws_manager.get_client('lambda'),
+                               zipfilepath,
+                               "lambda_handlers.aggregate_transformer_handler",
+                               memory_size=self._controller_memory_size)
+
+
+
 
         # Create lambda functions for each transformer type
         transformer_types = {}
@@ -209,22 +262,34 @@ class Controller(object):
                                    memory_size=self._source_memory_size)
 
     def schedule_controller_lambda(self):
+        self.schedule_lambda(self.controller_lambda_name(), self.controller_schedule)
+
+    def schedule_source_controller_lambda(self):
+        self.schedule_lambda(self.source_controller_lambda_name(), self.controller_schedule)
+
+    def schedule_transformer_controller_lambda(self):
+        self.schedule_lambda(self.aggregate_transformer_lambda_name(), "1")
+
+    def schedule_aggregate_controller_lambda(self):
+        self.schedule_lambda(self.aggregate_controller_lambda_name(), "5")
+
+    def schedule_lambda(self, lambda_name, schedule_minutes):
         cloudwatch = self._aws_manager.get_client('events')
         lambdaclient = self._aws_manager.get_client('lambda')
         controller_function_arn = lambdaclient.get_function(
-            FunctionName=self.controller_lambda_name())['Configuration']['FunctionArn']
-        rule_name = '%sController' % self.config['project_name']
+            FunctionName=lambda_name)['Configuration']['FunctionArn']
+        rule_name = '%s%s' % (lambda_name, self.config['project_name'])
         res = cloudwatch.put_rule(
                 Name=rule_name,
-                ScheduleExpression='cron(0/%s * * * ? *)' % self.controller_schedule,
+                ScheduleExpression='cron(0/%s * * * ? *)' % schedule_minutes,
         )
         try:
             res2 = lambdaclient.add_permission(
                 Action='lambda:InvokeFunction',
-                FunctionName=self.controller_lambda_name(),
+                FunctionName=lambda_name,
                 Principal='events.amazonaws.com',
                 SourceArn=res['RuleArn'],
-                StatementId='EventsInvoke%s' % self.controller_lambda_name()
+                StatementId='EventsInvoke%s' % lambda_name
             )
         except botocore.exceptions.ClientError as e:
             if "already exists" not in str(e):
@@ -245,6 +310,13 @@ class Controller(object):
             url = self._aws_manager.get_client('sqs').get_queue_url(QueueName=queue_name)['QueueUrl']
             self._sqs_queues[item_type] = self._sqs.Queue(url)
         return self._sqs_queues[item_type]
+
+    def get_aggregate_sqs_queue(self):
+        queue_name = self._resource_manager.aggregate_queue_name()
+        if queue_name not in self._sqs_queues:
+            url = self._aws_manager.get_client('sqs').get_queue_url(QueueName=queue_name)['QueueUrl']
+            self._sqs_queues[queue_name] = self._sqs.Queue(url)
+        return self._sqs_queues[queue_name]
 
     def drain_queues(self):
         queues = {}
@@ -345,12 +417,29 @@ class Controller(object):
         self.update_source_state(source)
         return items
 
+
+    def run_source_and_aggregate_transformer(self, config):
+        items = []
+        source = self.instantiate_source(config)
+
+        print("Source has new data? %s" % str(source.has_new_data()))
+        for item in source.yield_items():
+            self.store_item(self.config.get("source_storage", []), item)
+            print("Source yielded item", json.dumps(item.payload))
+            self.run_aggregate_transformer_job(
+                self.config, item, os.getcwd())
+            print("Finished processing aggregate transformer on item")
+        self.update_source_state(source)
+        return items
+
     def strip_sources(self, config):
         """
         Strip sources from a config so that its size doesn't exceed
         lambda's maximum limits
         """
-        config_copy = {}
+        config_copy = {
+            "sources": []
+        }
         for k in config:
             if k != "sources":
                 config_copy[k] = config[k]
@@ -400,10 +489,16 @@ class Controller(object):
         spec.loader.exec_module(module)
         return getattr(module, classpath.split(".")[-1])
 
-    def instantiate_filter(self, filter_conf):
-        if filter_conf["type"] not in filterClassMap:
-            raise RuntimeError("Unknown filter type %s" % filter_conf["type"])
-        return filterClassMap[filter_conf["type"]](self._aws_manager, filter_conf)
+    def import_filter(self, classpath, source_path):
+        return self.import_transformer(classpath, source_path)
+
+    def instantiate_filter(self, config):
+        if config['type'] not in filterClassMap:
+            if "." not in config['type']:
+                raise Exception('Unknown filter type %s ' % config['type'])
+            filter = self.import_filter(config['type'], self._source_path)
+            return filter(self._aws_manager, config)
+        return filterClassMap[config["type"]](self._aws_manager, config)
 
     def filter_item(self, filter_configs, item):
         for filter_conf in filter_configs:
@@ -427,14 +522,24 @@ class Controller(object):
         """Store any produced items according to the a storage config found
            in a source/transformer config
         """
+        print("ANTENNA STORE ITEM", storage_configs)
         for storage_conf in storage_configs:
             storageObj = self.instantiate_storage(storage_conf)
+            print("STORING ITEM for", storage_conf)
             storageObj.store_item(item)
+
+    def list_filters(self):
+        return self.config.get("filters", [])
 
     def run_transformer_job(self, config, input_item, source_path, use_queues=True):
         transformer = self.instantiate_transformer(
             config, source_path)
         new_item = transformer.transform(input_item)
+        try:
+            pass #TODO
+        except Exception as e:
+            print("EXCEPTION: Failed to process item", e)
+            return
 
         print("INPUT ITEM", str(json.dumps(input_item.payload, indent=4))[0:100])
         client = self._aws_manager.get_client('sqs')
@@ -446,10 +551,11 @@ class Controller(object):
                 QueueUrl=input_queue.url,
                 ReceiptHandle=input_item.payload['sqs_receipt_handle']
             )
-        print("Filtering item")
-        if not self.filter_item(config.get("filters", []), new_item):
+
+        if not self.filter_item(self.list_filters(), new_item):
+            print("Item does not pass filter test: Filtering item.")
             return None
-        print("Storing item")
+        print("Item passes filter tests. Storing item.")
         self.store_item(config.get("storage", []), new_item)
         print("Outputting new item on queue")
         if use_queues:
@@ -464,6 +570,91 @@ class Controller(object):
         print("Created new item on queue %s " % new_item.item_type)
         return new_item
 
+    def run_aggregate_controller_job(self, local=False):
+        # This assumes that all sources have the same item type
+        print("Run aggregate controller job")
+        item_type = self.config["sources"][0]["item_type"]
+        input_queue = self.get_sqs_queue(item_type)
+        print("Aggregate controller job source item type: %s" % item_type)
+        start = time.time()
+
+        max_per_minute = self.config.get(
+            "max_aggregate_transformers_per_minute",
+            200)
+        minimum_interval = 60.0 / float(max_per_minute)
+        last_message_processed = time.time()
+
+        print("Minimum interval between transformer creations:", minimum_interval, last_message_processed)
+        while time.time() - start < self.runtime:
+            for message in input_queue.receive_messages():
+                # TODO: Ensure we aren't processing the same message twice
+                # for some long-running transformation
+                print("Acquired SQS message for item type %s" % (item_type))
+                item = self.item_from_message_payload(item_type, message, input_queue.url)
+                if False and local:
+                    self.run_aggregate_transformer_job(
+                        self.config, item, os.getcwd())
+                else:
+                    self.invoke_aggregate_transformer_lambda(item)
+
+                old_last_message_processed = last_message_processed
+                last_message_processed = time.time()
+                time_diff = last_message_processed - old_last_message_processed
+                print("Testing for delay", time_diff, minimum_interval)
+                if time_diff < minimum_interval:
+                    sleep_interval = minimum_interval - time_diff
+                    print("Delaying for ", sleep_interval)
+                    time.sleep(sleep_interval)
+        print("Completed aggregate controller job")
+
+    def run_aggregate_transformer_job(self, config,
+                                      input_item, source_path):
+        print("\n\n\n")
+        print("Aggregate transformer job")
+        new_item = input_item
+        last_storage = []
+
+        for transformer_config in config['transformers']:
+            transformer = self.instantiate_transformer(
+                transformer_config, source_path)
+            print("---- Instantiated transformer of type ",
+                  transformer_config["type"])
+            try:
+                new_item = transformer.transform(new_item)
+
+                # Store item if storage has changed. Otherwise,
+                #  continue onwards for efficiency.
+                current_storage = transformer_config.get('storage', [])
+                if current_storage != [] and \
+                   current_storage != last_storage:
+                    last_storage = current_storage
+                    print("Storage changed since last transformer. Storing")
+                    self.store_item(current_storage, new_item)
+            except Exception as e:
+                print("EXCEPTION: Aggregate transformer job Failed to process item", json.dumps(input_item.payload)[:100], str(e))
+                return
+
+        print("INPUT ITEM", str(json.dumps(input_item.payload, indent=4))[0:100])
+        client = self._aws_manager.get_client('sqs')
+
+        if hasattr(input_item.payload, 'sqs_receipt_handle'):
+            print("Deleting message from queue")
+            input_queue = self.get_sqs_queue(input_item.item_type)
+            resp = client.delete_message(
+                QueueUrl=input_queue.url,
+                ReceiptHandle=input_item.payload['sqs_receipt_handle']
+            )
+
+        print("Storing item.")
+        self.store_item(last_storage, new_item)
+        print("Stored item with type %s " % new_item.item_type)
+
+        output_queue = self.get_aggregate_sqs_queue()
+        output_queue.send_message(MessageBody=json.dumps(new_item.payload))
+        print("Added message to aggregate transformer output queue")
+
+        return new_item
+
     def item_from_message_payload(self, item_type, message, queue_url):
         """
         Bundles SQS message origin information into an item's paylaod.
@@ -476,18 +667,35 @@ class Controller(object):
         payload['sqs_receipt_handle'] = message.receipt_handle
         return Sources.Item(item_type=item_type, payload=payload)
 
-    def invoke_transformer_lambda(self, config, item):
+    def invoke_transformer_lambda(self, transformer_config, item):
+        stripped_config = self.strip_sources(self.config)
         event = {
-            'controller_config': json.dumps(self.config),
-            'transformer_config': json.dumps(config),
+            'controller_config': json.dumps(stripped_config),
+            'transformer_config': json.dumps(transformer_config),
             'item': json.dumps({"item_type": item.item_type, "payload": item.payload})
         }
         response = self._aws_manager.get_client('lambda').invoke(
-            FunctionName=self.transformer_lambda_name(config),
+            FunctionName=self.transformer_lambda_name(transformer_config),
             InvocationType='Event',
             Payload=json.dumps(event)
         )
         return response
+
+    def invoke_aggregate_transformer_lambda(self, item):
+        stripped_config = self.strip_sources(self.config)
+
+        event = {
+            'controller_config': json.dumps(stripped_config),
+            'item': json.dumps({"item_type": item.item_type, "payload": item.payload})
+        }
+        response = self._aws_manager.get_client('lambda').invoke(
+            FunctionName=self.aggregate_transformer_lambda_name(),
+            InvocationType='Event',
+            Payload=json.dumps(event)
+        )
+        print("Invoke aggregate transformer lambda. Status:", response['StatusCode'])
+        return response
+
 
     def create_transformer_job(self, config, item_type, source_path):
         """
@@ -514,17 +722,19 @@ class Controller(object):
                     print("Acquired SQS message for item type %s" % (item_type))
                     item = self.item_from_message_payload(item_type, message, input_queue.url)
                     if self.local_jobs:
+                        jobs += 1
+                        self.run_transformer_job(config, item, source_path)
+                        print("Executing job %s" % jobs)
                         try:
-                            jobs += 1
-                            self.run_transformer_job(config, item, source_path)
-                            print("Executing job %s" % jobs)
+                            pass
                         except Exception as e:
                             print("Error: failed to transform item with exception %s" %e)
                     else:
                         #Spin up lambda job for transformer + item
+                        print("Invoking lambda job for transformer" , config['type'])
                         self.invoke_transformer_lambda(config, item)
                     print("Finished processing item with type %s" % item_type)
-            # TODO:
+            print("End processing items", time.time() - start, self.runtime)
             # Listen on appropriate SQS queue for tasks,
             # launching lambda jobs when either a time threshhold has been reached
             # or we have a full batch of items to be processed
@@ -656,9 +866,40 @@ class Controller(object):
         return self._lambda_role_arn
 
     def run(self):
+        self.augment_config_with_dynamodb_data(self.config)
         for sourceConfig in self.sources:
             self.create_source_job(sourceConfig)
 
+        # We create one transformer job for each transformer, with the same
+        # maximum execution time as the Controller
+        #
+        # The transformers will exit as soon as there are no further messages on the queue
+        #
+        # This assumes that a single transformer lambda function
+        # can keep up with the flow of incoming information.
+        # If this isn't the case, we'll need to spawn multiple
+        # transformer jobs for each transformer.
+        transformers = []
+
+        threads = []
+        for transformerConfig in self.transformers:
+            transformer = self.instantiate_transformer(transformerConfig, self._source_path)
+            for item_type in transformer.input_item_types:
+                t = Thread(
+                    target=self.create_transformer_job,
+                    args=[transformerConfig, item_type, self._source_path]
+                )
+                threads.append(t)
+        [ t.start() for t in threads ]
+        [ t.join() for t in threads ]
+
+    def run_sources(self):
+        self.augment_config_with_dynamodb_data(self.config)
+        for sourceConfig in self.sources:
+            self.create_source_job(sourceConfig)
+
+    def run_transformers(self):
+        self.augment_config_with_dynamodb_data(self.config)
         # We create one transformer job for each transformer, with the same
         # maximum execution time as the Controller
         #

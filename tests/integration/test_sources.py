@@ -33,6 +33,24 @@ class TestSources(unittest.TestCase):
         self.assertEqual(1, len(items))
         self.assertFalse(source.has_new_data())
 
+    def test_url_cleaning(self):
+        config = {
+            "rss_feed_url": "https://www.google.com/alerts/feeds/11517210187050766775/46586222971187936",
+            "keywords": ["Biotechnology", "AI"]
+        }
+        manager = AWSManager()
+        source = RSSFeedSource(manager, config)
+
+        base = "https://google.com/my-article-here"
+        tests = [
+            base + "?somequery=True!",
+            base + "#MyAnchorHere",
+            base + "#Allofthe?above=true"
+        ]
+        for test in tests:
+            print(source.clean_url_path(test))
+            self.assertTrue(source.clean_url_path(test) == base)
+
     def test_rss_feed_source(self):
         config = {
             "rss_feed_url": "https://www.google.com/alerts/feeds/11517210187050766775/46586222971187936",
@@ -44,6 +62,7 @@ class TestSources(unittest.TestCase):
 
         items = list(source.yield_items())
         self.assertTrue(len(items) > 3)
+
         for item in items:
             #print(item.payload.keys())
             self.assertTrue(len(item.payload['url']) > 10)

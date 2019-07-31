@@ -95,6 +95,10 @@ class Source(object):
         for k in state:
             self.state[k] = state[k]
 
+    def clean_url_path(self, url):
+        parsed = urlparse(url)
+        return "%s://%s%s" % (parsed.scheme, parsed.netloc, parsed.path)
+
     def get_state(self):
         return self.state
 
@@ -204,7 +208,7 @@ class RSSFeedSource(Source):
             yield Item(item_type=self.item_type,
                        payload={
                            'title': entry['title'],
-                           'url': entry['link'],
+                           'url': self.clean_url_path(entry['link']),
                            'content': content,
                            'source_type': 'RSS',
                            'source_keywords': self.get_keywords(),
@@ -260,7 +264,7 @@ class NewspaperLibSource(Source):
         print("Finished building newspaper lib source. Found %d articles" % source.size())
         for a in source.articles:
             payload = {
-                'url': a.url,
+                'url': self.clean_url_path(a.url),
                 'source_type': 'NewspaperLib',
                 'time_sourced': time.time(),
                 'domain': urlparse(self.url).netloc,

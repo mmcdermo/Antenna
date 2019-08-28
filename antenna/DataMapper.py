@@ -26,27 +26,29 @@ class DataMapper():
         resp = None
 
         if(required_null_field == None):
-            resp = client.scan(TableName=dynamodb_table_name)
+            resp = client.scan(TableName=dynamodb_table_name, ScanIndexForward=False)
         else:
             attr_values = {
                 ":pkeyvalue": {"S": partition_key_value},
                 ":minvalue" : {"N" : min_value}
             }
-            print("SCAN WITH", "attribute_not_exists(" + required_null_field + ") and attribute_exists(" + min_key + ") and " + min_key + " > :minvalue", min_value)
+            print("SCAN WITH", "attribute_not_exists(" + required_null_field + ")")
+            print(partition_key + " = " + partition_key_value + " and " + min_key + " > " + min_value )
             resp = client.query(
                 TableName=dynamodb_table_name,
                 IndexName=index_name,
                 ExpressionAttributeValues=attr_values ,
                 FilterExpression="attribute_not_exists(" + required_null_field + ")", # and attribute_exists(" + min_key + ") and " + min_key + " > :minvalue",
                 #attribute_exists(" + min_key + ")
-                KeyConditionExpression= partition_key + " = :pkeyvalue and " + min_key + " > :minvalue"
+                KeyConditionExpression= partition_key + " = :pkeyvalue and " + min_key + " > :minvalue",
+                ScanIndexForward=False
                 #FilterExpression="attribute_not_exists(" +
                 #required_null_field + ") AND "+ partition_key +
                 #" = :pkeyvalue"
             )
 
         print("RESP RETRIEVED")
-        last_evaluated_key = resp['LastEvaluatedKey']
+        last_evaluated_key = resp.get('LastEvaluatedKey', None)
 
         # Note that this selection mechanism will be incorrect
         # if multiple transformers of the same type are present
@@ -74,7 +76,9 @@ class DataMapper():
             if(required_null_field == None):
                 resp = client.scan(
                     ExclusiveStartKey=last_evaluated_key,
-                    TableName=dynamodb_table_name)
+                    TableName=dynamodb_table_name,
+                    ScanIndexForward=False
+                )
             else:
                 resp = client.query(
                     TableName=dynamodb_table_name,
@@ -84,7 +88,8 @@ class DataMapper():
                     },
                     FilterExpression="attribute_not_exists(" + required_null_field + ")",
                     KeyConditionExpression=partition_key + " = :pkeyvalue",
-                    ExclusiveStartKey=last_evaluated_key
+                    ExclusiveStartKey=last_evaluated_key,
+                    ScanIndexForward=False
                 )
 
             if 'LastEvaluatedKey' not in resp:

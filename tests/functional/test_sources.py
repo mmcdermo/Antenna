@@ -36,9 +36,11 @@ class TestSources(unittest.TestCase):
         #http://spectrum.ieee.org/blog/nanoclast
         config = {
             'url': 'http://futurism.com',
+            "item_type": "",
             'output_item_type': 'ScrapedArticle'
         }
         manager = AWSManager()
         source = NewspaperLibSource(manager, config)
         for item in source.yield_items():
+            print(item.payload)
             print(item.payload['url'])

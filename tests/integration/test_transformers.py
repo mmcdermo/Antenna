@@ -9,8 +9,10 @@ import antenna.Sources as Sources
 import zipfile
 import os
 from antenna.Controller import Controller, create_lambda_package, cleanup_lambda_package, create_lambda_function
+from antenna.Transformers import NewspaperLibScraper
 from antenna.ResourceManager import ResourceManager
 from antenna.lambda_handlers import transformer_handler, source_handler, controller_handler
+from antenna import Sources
 
 class TestTransformers(unittest.TestCase):
     def setUp(self):
@@ -19,6 +21,26 @@ class TestTransformers(unittest.TestCase):
             'local_controller': True,
             'local_jobs': True,
             'local_queue': False,
+            'source_storage': ['collector_refs'],
+            "storage": {
+	        "collector_refs": {
+	            "type": "DynamoDBStorage",
+	            "dynamodb_table_name": "collector_refs",
+	            "partition_key": "url",
+	            "partition_key_format_string": "{url}",
+	            "range_key": "time_sourced",
+	            "range_key_format_string": "{time_sourced}"
+	        },
+	        "collector_articles_v2": {
+	            "type": "DynamoDBStorage",
+	            "dynamodb_table_name": "collector_articles_v2",
+	            "partition_key": "url",
+	            "partition_key_format_string": "{url}",
+	            "range_key": "time_published",
+	            "range_key_format_string": "{time_published}"
+	        }
+            },
+
             'sources': [
                 {
                     "type": "RSSFeedSource",
@@ -86,6 +108,19 @@ class TestTransformers(unittest.TestCase):
         cleanup_lambda_package()
         response = client.delete_function(FunctionName=function_name)
 
+    def test_newspaperlib_scraper(self):
+        source_path = os.path.join(*(["/"] + (__file__.split("/")[:-2]) + ["test_data"]))
+        controller = Controller(self.config, source_path)
+        scraper = NewspaperLibScraper(controller._aws_manager, {
+            "input_item_types": [""],
+            "output_item_type": ""
+        })
+        item = Sources.Item(item_type="test", payload={
+            "url": "https://venturebeat.com/2019/08/27/deepmind-details-openspiel-a-collection-of-ai-training-tools-for-video-games/"
+        })
+        resp = scraper.transform(item)
+        self.assertTrue(len(resp.payload["links"]) > 0)
+        #print(json.dumps(resp.payload, indent=4))
 
     def test_newspaperlib_transformer(self):
         source_path = os.path.join(*(["/"] + (__file__.split("/")[:-2]) + ["test_data"]))

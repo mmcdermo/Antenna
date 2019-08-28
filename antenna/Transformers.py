@@ -10,6 +10,7 @@ from functools import reduce
 from newspaper import Article
 #from readability import Document
 import time
+import json
 import calendar
 import collections
 import datefinder
@@ -17,6 +18,8 @@ import datetime
 import dateutil.parser as dparser
 import requests
 import hashlib
+import io
+from lxml import html, etree
 
 class Item(object):
     def __init__(self, item_type="", payload={}):
@@ -126,14 +129,17 @@ class NewspaperLibScraper(Transformer):
     def transform(self, item):
         url = item.payload['url']
         print("NewspaperLibScraper scraping URL %s" % url)
-        a = Article(url, language='en')
+        a = Article(url, language='en', keep_article_html=True)
         a.download()
         a.parse()
 
-        # Extract date using readability, since
-        # newspaper's date extraction is unreliable
-        #doc = Document(a.html)
+        try:
+            tree = etree.parse(io.StringIO(a.article_html))
+            links = tree.xpath('//a/@href')
+        except Exception as e:
+            links = []
 
+        item.payload['links'] = links
         item.payload['title'] = a.title
         item.payload['fulltext'] = a.text
         item.payload['image'] = a.top_image

@@ -4,3 +4,9 @@ feedparser
 newspaper3k
 datefinder
 arangodb
+jmespath
+maya
+python-arango
+redleader
+tweepy
+pyArango

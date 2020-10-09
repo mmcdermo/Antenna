@@ -25,6 +25,7 @@ import hashlib
 import json
 import time
 import newspaper
+from newspaper.source import Category
 import calendar
 import dateutil.parser
 from urllib.parse import urlparse
@@ -238,7 +239,9 @@ class NewspaperLibSource(Source):
         }
         self._optional_keywords = [
             "minutes_between_scrapes",
-            "trusted_source"
+            "trusted_source",
+            "paginate_start",
+            "paginate_end"
         ]
         self.state = {
             "time_last_updated": 0
@@ -249,31 +252,69 @@ class NewspaperLibSource(Source):
         # Only scrape if it's been at least 10 minutes since the
         # last article was seen
         print("RSS Feed last run at %s" % self.state['time_last_updated'])
-        return time.time() - float(self.state['time_last_updated']) > 60 * self.minutes_between_scrapes
+        return time.time() - float(self.state['time_last_updated']) > 60 * float(self.minutes_between_scrapes)
 
     def is_trusted_source(self):
         return hasattr(self, "trusted_source")
 
+    def generate_payload(self, a):
+        payload = {
+            'url': self.clean_url_path(a.url),
+            'source_type': 'NewspaperLib',
+            'time_sourced': time.time(),
+            'domain': urlparse(self.url).netloc,
+            'source_url': self.url,
+            'trusted_source': self.is_trusted_source()
+        }
+        return Item(
+            item_type=self.item_type,
+            payload=payload)
+
+    def yield_paginated_items(self):
+        categories = []
+        for page in range(self.paginate_start, self.paginate_end):
+            categories.append(self.url.replace("{page}", str(page)))
+        print("PAGINATION CATEGORIES", categories)
+
+        # Here we add each page of the index as a newspaper 'category'
+        source = newspaper.build(self.url, memoize_articles=False)
+        source.categories = [Category(url=url) for url in categories]
+        print(source.categories)
+        source.download_categories()
+        source.parse_categories()
+        for category in source.categories:
+            print(category.url)
+        source.generate_articles()
+
+        print("SIZE", source.size())
+        for a in source.articles:
+            print("URL", a.url)
+            yield self.generate_payload(a)
+        return
+
+        for page in range(self.paginate_start, self.paginate_end):
+            url = self.url.replace("{page}", str(page))
+            print("PAGINATED: Building newspaper lib source for URL %s" % url)
+            source = newspaper.build(url, memoize_articles=False)
+            print("Finished building newspaper lib source. Found %d articles" % source.size())
+            for a in source.articles:
+                print("URL", a.url)
+                yield self.generate_payload(a)
 
     def yield_items(self):
         self.state = {
             'time_last_updated': time.time()
         }
+        if hasattr(self, 'paginate_start'):
+            for a in self.yield_paginated_items():
+                yield a
+            return
+
         print("Building newspaper lib source for URL %s" % self.url)
         source = newspaper.build(self.url, memoize_articles=False)
         print("Finished building newspaper lib source. Found %d articles" % source.size())
         for a in source.articles:
-            payload = {
-                'url': self.clean_url_path(a.url),
-                'source_type': 'NewspaperLib',
-                'time_sourced': time.time(),
-                'domain': urlparse(self.url).netloc,
-                'source_url': self.url,
-                'trusted_source': self.is_trusted_source()
-            }
-            yield Item(
-                item_type=self.item_type,
-                payload=payload)
+            yield self.generate_payload(a)
 
 class ArchivedRedditSubmissionsSource(Source):
     """

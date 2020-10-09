@@ -142,6 +142,7 @@ class NewspaperLibScraper(Transformer):
         item.payload['links'] = links
         item.payload['title'] = a.title
         item.payload['fulltext'] = a.text
+        #item.payload['html'] = a.html
         item.payload['image'] = a.top_image
         item.payload['images'] = list(a.images)
         item.payload['movies'] = list(a.movies)

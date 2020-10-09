@@ -140,6 +140,30 @@ def run_source(ctx, search_key, aws_profile):
 
     print(json.dumps(list(map(lambda x: x.payload, items)), indent=4))
 
+@cli.command(name='run-sources')
+@click.option('--aws-profile', default=None,
+              help='AWS Profile to use for cluster commands')
+@click.pass_context
+def run_sources(ctx, aws_profile):
+    if ctx.obj['config_file'] not in os.listdir(ctx.obj['project_dir']):
+        click.echo('No antenna_config.json file found in directory')
+        raise click.Abort()
+
+    config = {}
+    with open(os.path.join(ctx.obj['project_dir'], ctx.obj['config_file']), 'r') as config_file:
+        config = json.load(config_file)
+
+    try:
+        controller = Controller.Controller(config, os.getcwd(), aws_profile = aws_profile)
+        #controller.create_resources()
+    except Exception as e:
+        click.echo('Error with config: %s' % e)
+        raise click.Abort()
+
+    items = []
+    controller.run_sources()
+    print(json.dumps(list(map(lambda x: x.payload, items)), indent=4))
+
 @cli.command(name='run-source-and-aggregate-transformer')
 @click.argument('search_key')
 @click.option('--aws-profile', default=None,
@@ -162,7 +186,8 @@ def run_source_and_aggregate_transformer(ctx, search_key, aws_profile):
         raise click.Abort()
 
     items = []
-    for source in controller.config['sources']:
+    augmented = controller.augment_config_with_dynamodb_data(controller.config)
+    for source in augmented['sources']:
         found = False
         for k in source:
             if search_key in str(source[k]).lower():
@@ -174,6 +199,34 @@ def run_source_and_aggregate_transformer(ctx, search_key, aws_profile):
             items += controller.run_source_and_aggregate_transformer(source)
 
         print(len(list(map(lambda x: x.payload, items))))
+
+@cli.command(name='backfill-source')
+@click.argument('site_url')
+@click.option('--local/--remote', default=True)
+@click.option('--batch-size', default=10)
+@click.option('--source-type', default="NewspaperLibSource")
+@click.option('--aws-profile', default=None,
+              help='AWS Profile to use for cluster commands')
+@click.pass_context
+def backfill_source(ctx, site_url, local, batch_size, source_type, aws_profile):
+    if ctx.obj['config_file'] not in os.listdir(ctx.obj['project_dir']):
+        click.echo('No antenna_config.json file found in directory')
+        raise click.Abort()
+
+    config = {}
+    with open(os.path.join(ctx.obj['project_dir'], ctx.obj['config_file']), 'r') as config_file:
+        config = json.load(config_file)
+    controller = Controller.Controller(config, os.getcwd(), aws_profile = aws_profile)
+    items = []
+    source = {
+        "type": source_type,
+        "url": site_url,
+        "rss_feed_url": site_url,
+        "item_type": "ArticleReference"
+    }
+    items += controller.run_source_and_aggregate_transformer(
+        source, local=local, batch_size=batch_size)
+    print(len(list(map(lambda x: x.payload, items))))
 
 @cli.command(name='run-controller')
 @click.option('--aws-profile', default=None,
@@ -211,7 +264,7 @@ def run_aggregate_controller_local(ctx, aws_profile):
 
     try:
         controller = Controller.Controller(config, os.getcwd(), aws_profile=aws_profile)
-        controller.create_resources()
+        #controller.create_resources()
     except Exception as e:
         click.echo('Error with config: %s' % e)
         raise click.Abort()
